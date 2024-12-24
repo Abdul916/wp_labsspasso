@@ -74,15 +74,47 @@ function restrict_subscription_plan_purchases($passed, $product_id) {
     foreach ($orders as $order) {
         foreach ($order->get_items() as $item) {
             $membership_id = $order->get_id();
+            $_SESSION['membership_id'] = $membership_id;
             $product_name = $item->get_name();
             $order_product_id = $item->get_product_id();
-            $_SESSION['membership_id'] = $membership_id;
-            $_SESSION['has_membership'] = true;
-            wp_safe_redirect(site_url('/pricing-tables/'));
-            exit;
+            if ($order_product_id == $free_plan_id) {
+                $_SESSION['has_membership'] = true;
+                $_SESSION['notice_msg'] = 'You already have an active membership. Please cancel it first to buy a new plan.';
+                wp_safe_redirect(site_url('/pricing-tables/'));
+                exit;
+            }
+            if ($order_product_id == $monthly_plan_id) {
+                $_SESSION['has_membership'] = true;
+                $_SESSION['notice_msg'] = 'You have already an active membership. Please cancel that first to upgrade.';
+                wp_safe_redirect(site_url('/pricing-tables/'));
+                exit;
+            }
+            if ($order_product_id == $yearly_plan_id) {
+                $_SESSION['has_membership'] = true;
+                $_SESSION['notice_msg'] = 'You already have an active membership. Please cancel that first to downgrade.';
+                wp_safe_redirect(site_url('/pricing-tables/'));
+                exit;
+            }
         }
     }
     return $passed;
+}
+
+add_action('init', 'handle_cancel_membership_request');
+function handle_cancel_membership_request() {
+    if (isset($_POST['cancel_membership'])) {
+        unset ($_SESSION['membership_id']);
+        $_SESSION['membership_cancelled'] = true;
+        $order_id = intval($_POST['cancel_membership_order_id']);
+        $order = wc_get_order($order_id);
+        if ($order && $order->get_status() === 'completed') {
+            $order->update_status('cancelled', 'Membership cancelled by the user.');
+        } else {
+            wc_add_notice('Unable to cancel the membership. Please try again.', 'error');
+        }
+        wp_safe_redirect(site_url('/pricing-tables/'));
+        exit;
+    }
 }
 
 add_action('wp_footer', 'custom_display_pop_up_notice');
@@ -131,7 +163,25 @@ function custom_display_pop_up_notice() {
         ?>
         <div id="custom_popup_notice" style="display:none;">
             <div class="popup-content">
-                <p>You already have an active subscription. <a href="<?php echo site_url('/help-center/'); ?>" style="color: #00b7ff;">Please cancel your existing subscription.</a></p>
+                <p>
+                    <?php
+                    echo $_SESSION['notice_msg'];
+                    unset ($_SESSION['notice_msg']);
+                    ?>
+                </p>
+                <form method="post">
+                    <input type="hidden" name="cancel_membership_order_id" value="<?php echo $_SESSION['membership_id']; ?>">
+                    <button type="submit" name="cancel_membership" class="button">Cancel Membership</button>
+                    <button onclick="closePopup()" type="button">Close</button>
+                </form>
+            </div>
+        </div>
+    <?php } elseif (isset($_SESSION['membership_cancelled'])) {
+        unset($_SESSION['membership_cancelled']);
+        ?>
+        <div id="custom_popup_notice">
+            <div class="popup-content">
+                <p>Your membership has been cancelled.</p>
                 <button onclick="closePopup()" type="button">Close</button>
             </div>
         </div>
